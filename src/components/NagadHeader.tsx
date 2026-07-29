@@ -51,12 +51,12 @@ export const NagadHeader: React.FC<NagadHeaderProps> = ({
       </div>
 
       {/* Cart Icon */}
-      <div className="mt-5 sm:mt-7 mb-1.5">
+      <div className="mt-8 sm:mt-12 mb-2">
         <CartIcon className="w-18 h-14 sm:w-20 sm:h-16" />
       </div>
 
       {/* Store Name */}
-      <h1 className="text-lg sm:text-xl font-black uppercase text-center tracking-wide text-white drop-shadow mb-5 sm:mb-7 max-w-xs sm:max-w-md break-words">
+      <h1 className="text-lg sm:text-xl font-black uppercase text-center tracking-wide text-white drop-shadow mb-8 sm:mb-12 max-w-xs sm:max-w-md break-words">
         {storeName || 'MUNNA GENERAL STORE'}
       </h1>
 

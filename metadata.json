@@ -1,0 +1,6 @@
+{
+  "name": "Nagad Payment Gateway",
+  "description": "Nagad payment gateway portal with dynamic settings and real-time admin monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

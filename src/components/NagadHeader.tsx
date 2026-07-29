@@ -61,15 +61,15 @@ export const NagadHeader: React.FC<NagadHeaderProps> = ({
       </h1>
 
       {/* Invoice Details */}
-      <div className="w-full max-w-xs sm:max-w-sm flex flex-col gap-1 text-left text-xs sm:text-sm font-medium text-white leading-tight">
-        <div className="flex items-center">
+      <div className="w-full max-w-xs sm:max-w-sm flex flex-col text-left text-xs sm:text-sm font-medium text-white leading-tight mb-7 sm:mb-9">
+        <div className="flex items-center mb-2 sm:mb-2.5">
           <span className="font-bold text-white w-28 sm:w-32 shrink-0">
             {lang === 'bn' ? 'ইনভয়েস নং:' : 'Invoice No:'}
           </span>
           <span className="text-white font-normal truncate">{invoiceNo}</span>
         </div>
 
-        <div className="flex items-center">
+        <div className="flex items-center mb-2 sm:mb-2.5">
           <span className="font-bold text-white w-28 sm:w-32 shrink-0">
             {lang === 'bn' ? 'মোট পরিমাণ:' : 'Total Amount:'}
           </span>

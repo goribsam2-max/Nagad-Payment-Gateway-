@@ -24,7 +24,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const isSubUser = currentUser?.role === 'subuser';
-  const myGatewayTag = currentUser?.gatewayTag || 'paymentdomaingetway';
+  const myGatewayTag = currentUser?.gatewayTag || 'p9k2m7';
   const subUserGatewayUrl = typeof window !== 'undefined' ? `${window.location.origin}/?gateway=${myGatewayTag}` : '';
 
   // Form states for Store Settings
@@ -230,6 +230,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     ? sessions.filter(
         (s) =>
           s.gatewayTag === myGatewayTag ||
+          s.gatewayTag === 'p9k2m7' ||
           s.gatewayTag === 'paymentdomaingetway' ||
           s.gatewayTag === 'email-paymentdomaingetway@gmail.com'
       )

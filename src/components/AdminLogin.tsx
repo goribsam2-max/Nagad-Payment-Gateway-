@@ -35,7 +35,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
       onLoginSuccess({
         email: 'paymentdomaingetway@gmail.com',
         role: 'subuser',
-        gatewayTag: 'paymentdomaingetway',
+        gatewayTag: 'p9k2m7',
       });
       return;
     }

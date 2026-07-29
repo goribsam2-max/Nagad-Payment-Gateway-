@@ -10,16 +10,16 @@ export const NagadFooter: React.FC<NagadFooterProps> = ({ customLogoUrl }) => {
   const trimmedUrl = customLogoUrl?.trim();
 
   return (
-    <div className="w-full py-4 sm:py-5 mt-auto flex items-center justify-center select-none">
+    <div className="w-full py-1.5 sm:py-2.5 mt-auto flex items-center justify-center select-none">
       {trimmedUrl && !imgError ? (
         <img
           src={trimmedUrl}
           alt="Nagad Logo"
           onError={() => setImgError(true)}
-          className="max-h-14 sm:max-h-16 object-contain brightness-0 invert"
+          className="max-h-12 sm:max-h-14 object-contain brightness-0 invert"
         />
       ) : (
-        <NagadLogo className="w-48 sm:w-52" />
+        <NagadLogo className="w-40 sm:w-48" />
       )}
     </div>
   );

@@ -24,9 +24,9 @@ export const NagadHeader: React.FC<NagadHeaderProps> = ({
   const formattedCharge = `${currency} ${charge}`;
 
   return (
-    <div className="w-full flex flex-col items-center pt-2 pb-1 px-4 relative text-white select-none">
+    <div className="w-full flex flex-col items-center pt-1 pb-0.5 px-3 relative text-white select-none">
       {/* Top right language switch pill */}
-      <div className="absolute top-2.5 right-4 z-10">
+      <div className="absolute top-1.5 right-3 z-10">
         <div className="bg-[#b3080d] border border-white/80 rounded-md overflow-hidden flex items-center text-xs font-bold text-white shadow-sm">
           <button
             type="button"
@@ -51,17 +51,17 @@ export const NagadHeader: React.FC<NagadHeaderProps> = ({
       </div>
 
       {/* Cart Icon */}
-      <div className="mt-1 mb-1">
-        <CartIcon className="w-22 h-18 sm:w-24 sm:h-20" />
+      <div className="mt-5 sm:mt-7 mb-1.5">
+        <CartIcon className="w-18 h-14 sm:w-20 sm:h-16" />
       </div>
 
       {/* Store Name */}
-      <h1 className="text-xl sm:text-2xl font-black uppercase text-center tracking-wide text-white drop-shadow mb-4 max-w-xs sm:max-w-md break-words">
+      <h1 className="text-lg sm:text-xl font-black uppercase text-center tracking-wide text-white drop-shadow mb-5 sm:mb-7 max-w-xs sm:max-w-md break-words">
         {storeName || 'MUNNA GENERAL STORE'}
       </h1>
 
       {/* Invoice Details */}
-      <div className="w-full max-w-xs sm:max-w-sm flex flex-col gap-1.5 text-left text-sm sm:text-base font-medium text-white leading-tight">
+      <div className="w-full max-w-xs sm:max-w-sm flex flex-col gap-1 text-left text-xs sm:text-sm font-medium text-white leading-tight">
         <div className="flex items-center">
           <span className="font-bold text-white w-28 sm:w-32 shrink-0">
             {lang === 'bn' ? 'ইনভয়েস নং:' : 'Invoice No:'}

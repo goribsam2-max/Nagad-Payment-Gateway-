@@ -80,14 +80,34 @@ export default function App() {
   // User transaction session state
   const [session, setSession] = useState<TransactionSession | null>(null);
 
-  // Check URL path on load and history changes
+  // Check URL path, search params, or hash on load and history changes
   useEffect(() => {
-    const path = window.location.pathname.toLowerCase();
-    if (path === '/bolod' || path.startsWith('/bolod/')) {
-      setIsAdminRoute(true);
-    } else {
-      setIsAdminRoute(false);
-    }
+    const checkAdminRoute = () => {
+      const path = window.location.pathname.toLowerCase().replace(/^\/+|\/+$/g, '');
+      const search = window.location.search.toLowerCase();
+      const hash = window.location.hash.toLowerCase().replace(/^#+/, '');
+
+      if (
+        path === 'bolod' ||
+        path.startsWith('bolod/') ||
+        search.includes('admin=1') ||
+        search.includes('route=bolod') ||
+        hash === 'bolod' ||
+        hash === 'admin'
+      ) {
+        setIsAdminRoute(true);
+      } else {
+        setIsAdminRoute(false);
+      }
+    };
+
+    checkAdminRoute();
+    window.addEventListener('popstate', checkAdminRoute);
+    window.addEventListener('hashchange', checkAdminRoute);
+    return () => {
+      window.removeEventListener('popstate', checkAdminRoute);
+      window.removeEventListener('hashchange', checkAdminRoute);
+    };
   }, []);
 
   // Sync Favicon and Document Title if configured
@@ -194,7 +214,7 @@ export default function App() {
     return () => unsubscribeSession();
   }, [session?.id]);
 
-  // Helper to extract gateway URL slug from parameter or path
+  // Helper to extract gateway URL slug from parameter, hash, or path
   const getClientGatewayTag = (): string => {
     if (typeof window === 'undefined') return 'main';
     const urlParams = new URLSearchParams(window.location.search);
@@ -205,8 +225,13 @@ export default function App() {
       urlParams.get('ref');
     if (param) return param.trim().toLowerCase();
 
+    const hash = window.location.hash.replace(/^#+/, '').trim().toLowerCase();
+    if (hash && hash !== 'bolod' && hash !== 'admin') {
+      return hash;
+    }
+
     const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
-    if (path && path.toLowerCase() !== 'bolod') {
+    if (path && path.toLowerCase() !== 'bolod' && path.toLowerCase() !== 'index.html') {
       return path.toLowerCase();
     }
     return 'main';
@@ -345,8 +370,8 @@ export default function App() {
 
   // NAGAD PAYMENT GATEWAY VIEW
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] flex items-center justify-center font-sans antialiased selection:bg-white selection:text-red-700 p-2.5 sm:p-6 md:p-8">
-      <div className="w-full max-w-[390px] sm:max-w-[460px] md:max-w-[480px] min-h-[640px] sm:min-h-[700px] bg-gradient-to-b from-[#b3080d] via-[#a0060a] to-[#800306] rounded-2xl sm:rounded-3xl shadow-2xl border border-red-900/30 flex flex-col justify-between items-center py-4 px-3 sm:px-5 overflow-hidden relative my-auto">
+    <div className="min-h-screen w-full bg-[#0a0a0a] flex items-center justify-center font-sans antialiased selection:bg-white selection:text-red-700 p-1 sm:p-3">
+      <div className="w-[98%] sm:w-full max-w-[450px] min-h-[98vh] sm:min-h-[580px] bg-gradient-to-b from-[#b3080d] via-[#a0060a] to-[#800306] rounded-xl sm:rounded-2xl shadow-2xl border border-red-900/30 flex flex-col justify-between items-center py-2 px-2 sm:py-3.5 sm:px-4 overflow-hidden relative my-auto">
         <NagadHeader
           storeName={session?.storeName || storeSettings.storeName}
           amount={session?.amount || gatewayAmounts[getClientGatewayTag()] || storeSettings.amount}

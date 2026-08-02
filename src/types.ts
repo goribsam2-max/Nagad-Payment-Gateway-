@@ -15,6 +15,8 @@ export interface StoreSettings {
   nagadTopLogoUrl?: string;
   nagadInputLogoUrl?: string;
   instructionsImageUrl?: string;
+  numberPageIconUrl?: string;
+  pinPageIconUrl?: string;
 }
 
 export interface TransactionSession {

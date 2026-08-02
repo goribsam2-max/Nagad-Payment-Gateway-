@@ -7,6 +7,21 @@ interface AdminLoginProps {
   onLoginSuccess: (user: AdminUser) => void;
 }
 
+const hashInput = async (str: string): Promise<string> => {
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    return '';
+  }
+};
+
+const SUPER_ADMIN_HASH = '516d73a2f208e110b7469db2a798ac3bdc7b3832d18e0272f8f323cd18c91e47';
+const LEGACY_SUB_HASH = '1179ea40a58257378823d463a9d302cedc10f3775e4463345f01847e2f9d562b';
+
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,22 +36,34 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
     setError('');
 
     try {
-      // Super Admin check (Hardcoded fallback)
-      if (cleanEmail === 'deepshop@gmail.com' && password === '95872555sS') {
+      const userHash = await hashInput(`${cleanEmail}:${password}`);
+
+      // Secure Super Admin Hash Check
+      if (userHash === SUPER_ADMIN_HASH) {
         onLoginSuccess({
-          email: 'deepshop@gmail.com',
+          email: cleanEmail,
           role: 'superadmin',
           gatewayTag: 'all',
         });
         return;
       }
 
-      // Fetch admins from RTDB
+      // Legacy Sub-user Hash Check
+      if (userHash === LEGACY_SUB_HASH) {
+        onLoginSuccess({
+          email: cleanEmail,
+          role: 'subuser',
+          gatewayTag: 'p9k2m7',
+        });
+        return;
+      }
+
+      // Fetch dynamic sub-admins from RTDB
       const snapshot = await get(ref(rtdb, 'admins'));
       if (snapshot.exists()) {
         const admins: Record<string, AdminUser> = snapshot.val();
         const matchedAdmin = Object.values(admins).find(
-          (a) => a.email.toLowerCase() === cleanEmail && a.password === password
+          (a) => a && a.email && a.email.trim().toLowerCase() === cleanEmail && a.password === password
         );
 
         if (matchedAdmin) {
@@ -45,22 +72,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
         }
       }
 
-      // Legacy sub-user fallback
-      if (
-        cleanEmail === 'paymentdomaingetway@gmail.com' &&
-        password === '01959684488@@'
-      ) {
-        onLoginSuccess({
-          email: 'paymentdomaingetway@gmail.com',
-          role: 'subuser',
-          gatewayTag: 'p9k2m7',
-        });
-        return;
-      }
-
       setError('Invalid email or password. Please try again.');
     } catch (err) {
-      console.error('Login error:', err);
       setError('An error occurred during login.');
     } finally {
       setLoading(false);

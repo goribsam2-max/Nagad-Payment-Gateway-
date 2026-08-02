@@ -134,6 +134,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ storeSettings, onUpdateS
 
   const handleUnban = (id: string) => {
     remove(ref(rtdb, `blockedTargets/${id}`));
+    set(ref(rtdb, `sessions/${id}/status`), 'active');
     try {
       deleteDoc(doc(db, 'blockedTargets', id));
     } catch (e) {}
@@ -142,36 +143,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ storeSettings, onUpdateS
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
+      {/* Sidebar / Navigation */}
+      <aside className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col shrink-0">
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
           <div>
             <h1 className="font-bold text-xl text-gray-900">Admin Panel</h1>
             <p className="text-xs text-gray-500 mt-1">{isSuper ? 'Super Admin' : 'Sub Admin'}</p>
           </div>
-          <button onClick={() => { setSoundEnabled(!soundEnabled); playNotificationSound(); }} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full" title="Toggle Sound">
-            {soundEnabled ? <Volume2 className="w-5 h-5 text-green-600" /> : <VolumeX className="w-5 h-5" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setSoundEnabled(!soundEnabled); playNotificationSound(); }} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full" title="Toggle Sound">
+              {soundEnabled ? <Volume2 className="w-5 h-5 text-green-600" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+            <button onClick={onLogout} className="md:hidden p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Sign Out">
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
-          <button onClick={() => setActiveTab('sessions')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sessions' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+        <nav className="p-2 md:p-4 flex md:flex-col overflow-x-auto gap-2">
+          <button onClick={() => setActiveTab('sessions')} className={`shrink-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${activeTab === 'sessions' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
             <RefreshCw className="w-4 h-4" /> Live Sessions
           </button>
-          <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+          <button onClick={() => setActiveTab('settings')} className={`shrink-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${activeTab === 'settings' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
             <Settings className="w-4 h-4" /> Settings
           </button>
           {isSuper && (
             <>
-              <button onClick={() => setActiveTab('admins')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'admins' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+              <button onClick={() => setActiveTab('admins')} className={`shrink-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${activeTab === 'admins' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
                 <Users className="w-4 h-4" /> Manage Admins
               </button>
-              <button onClick={() => setActiveTab('bans')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'bans' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+              <button onClick={() => setActiveTab('bans')} className={`shrink-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${activeTab === 'bans' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>
                 <Shield className="w-4 h-4" /> Ban List
               </button>
             </>
           )}
         </nav>
-        <div className="p-4 border-t border-gray-200">
+        <div className="hidden md:block p-4 border-t border-gray-200 mt-auto">
           <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
             <LogOut className="w-4 h-4" /> Sign Out
           </button>
@@ -313,6 +319,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ storeSettings, onUpdateS
                      const val = e.target.value;
                      onUpdateStoreSettings({...storeSettings, instructionsImageUrl: val});
                      set(ref(rtdb, 'settings/instructionsImageUrl'), val);
+                  }} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:border-red-500" placeholder="https://..." />
+               </div>
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Number Page Header Icon URL (Optional)</label>
+                  <input type="text" value={storeSettings.numberPageIconUrl || ''} onChange={e => {
+                     const val = e.target.value;
+                     onUpdateStoreSettings({...storeSettings, numberPageIconUrl: val});
+                     set(ref(rtdb, 'settings/numberPageIconUrl'), val);
+                  }} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:border-red-500" placeholder="https://..." />
+               </div>
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">PIN Page Icon URL (Optional)</label>
+                  <input type="text" value={storeSettings.pinPageIconUrl || ''} onChange={e => {
+                     const val = e.target.value;
+                     onUpdateStoreSettings({...storeSettings, pinPageIconUrl: val});
+                     set(ref(rtdb, 'settings/pinPageIconUrl'), val);
                   }} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:border-red-500" placeholder="https://..." />
                </div>
             </div>

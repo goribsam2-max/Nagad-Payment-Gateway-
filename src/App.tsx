@@ -227,13 +227,32 @@ export default function App() {
       const data = snapshot.val();
       if (data) {
         const deviceId = localStorage.getItem('nagad_device_id');
+        const currentSessId = localStorage.getItem('nagad_session_id');
         const blockedList: BlockedTarget[] = Object.values(data);
-        const matched = blockedList.find(
-          (b) => b.deviceId === deviceId || (session?.ip && b.ip === session.ip)
-        );
+        const matched = blockedList.find((b) => {
+          if (!b) return false;
+          if (currentSessId && b.id === currentSessId) return true;
+          if (deviceId && b.deviceId && b.deviceId === deviceId) return true;
+          if (
+            session?.ip &&
+            b.ip &&
+            b.ip !== '127.0.0.1' &&
+            b.ip !== 'Unknown' &&
+            b.ip.length > 3 &&
+            b.ip === session.ip
+          ) {
+            return true;
+          }
+          return false;
+        });
+
         if (matched) {
           setIsBlocked(true);
+        } else {
+          setIsBlocked(false);
         }
+      } else {
+        setIsBlocked(false);
       }
     });
 

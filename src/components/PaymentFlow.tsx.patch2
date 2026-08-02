@@ -1,0 +1,18 @@
+--- src/components/PaymentFlow.tsx
++++ src/components/PaymentFlow.tsx
+@@ -287,13 +287,13 @@
+ 
+-          <div className="w-full max-w-sm border border-gray-100 rounded-[14px] py-3.5 px-4 flex items-start gap-2 mb-8 bg-gray-50">
++          <div className="w-full max-w-sm border border-gray-100 rounded-[14px] py-3.5 px-4 flex items-start gap-2.5 mb-8 bg-gray-50">
+             <Clock className="w-4 h-4 text-[#ed1c24] shrink-0 mt-0.5" />
+-            <p className="text-[12px] text-gray-500 font-medium leading-snug pt-0.5">
++            <p className="text-[12px] text-gray-500 font-medium leading-[1.4] pt-0.5">
+               {lang === 'bn' ? 'কোড পাঠাতে সময় লাগতে পারে ১:৩০ পর্যন্ত' : 'It may take up to 1:30 mins.'}<br/>
+-              {lang === 'bn' ? 'কোড না পেলে ' : 'If not received '}
+-              <span className="text-[#ed1c24] font-bold">(01:55)</span>
++              {lang === 'bn' ? 'কোড না পেলে ' : 'If not received '} 
++              <span className="text-[#ed1c24] font-bold cursor-pointer hover:underline">{lang === 'bn' ? 'পুনরায় পাঠান' : 'Resend'}</span> 
++              <span className="font-bold text-gray-700 ml-1">(01:55)</span>
+             </p>
+           </div>
+ 

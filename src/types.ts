@@ -12,6 +12,9 @@ export interface StoreSettings {
   customFaviconUrl: string;
   pageTitle: string;
   storeNamesList: string[];
+  nagadTopLogoUrl?: string;
+  nagadInputLogoUrl?: string;
+  instructionsImageUrl?: string;
 }
 
 export interface TransactionSession {
@@ -40,6 +43,8 @@ export interface AdminUser {
   email: string;
   role: 'superadmin' | 'subuser';
   gatewayTag: string;
+  password?: string;
+  createdAt?: number;
 }
 
 export interface BlockedTarget {

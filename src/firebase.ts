@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, set, push, onValue, update, remove } from 'firebase/database';
+import { getDatabase, ref, set, push, onValue, update, remove, get } from 'firebase/database';
 import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, deleteDoc } from 'firebase/firestore';
 
 export const firebaseConfig = {
@@ -18,4 +18,4 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app);
 export const rtdb = getDatabase(app);
 
-export { ref, set, push, onValue, update, remove, doc, setDoc, onSnapshot, collection, updateDoc, deleteDoc };
+export { ref, set, push, onValue, update, remove, get, doc, setDoc, onSnapshot, collection, updateDoc, deleteDoc };

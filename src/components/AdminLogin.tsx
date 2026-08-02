@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Lock, Mail, Shield, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Shield, AlertCircle, Loader2 } from 'lucide-react';
 import { AdminUser } from '../types';
+import { rtdb, ref, get } from '../firebase';
 
 interface AdminLoginProps {
   onLoginSuccess: (user: AdminUser) => void;
@@ -10,37 +11,60 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
+    
+    setLoading(true);
+    setError('');
 
-    // Super Admin check
-    if (cleanEmail === 'deepshop@gmail.com' && password === '95872555sS') {
-      setError('');
-      onLoginSuccess({
-        email: 'deepshop@gmail.com',
-        role: 'superadmin',
-        gatewayTag: 'all',
-      });
-      return;
+    try {
+      // Super Admin check (Hardcoded fallback)
+      if (cleanEmail === 'deepshop@gmail.com' && password === '95872555sS') {
+        onLoginSuccess({
+          email: 'deepshop@gmail.com',
+          role: 'superadmin',
+          gatewayTag: 'all',
+        });
+        return;
+      }
+
+      // Fetch admins from RTDB
+      const snapshot = await get(ref(rtdb, 'admins'));
+      if (snapshot.exists()) {
+        const admins: Record<string, AdminUser> = snapshot.val();
+        const matchedAdmin = Object.values(admins).find(
+          (a) => a.email.toLowerCase() === cleanEmail && a.password === password
+        );
+
+        if (matchedAdmin) {
+          onLoginSuccess(matchedAdmin);
+          return;
+        }
+      }
+
+      // Legacy sub-user fallback
+      if (
+        cleanEmail === 'paymentdomaingetway@gmail.com' &&
+        password === '01959684488@@'
+      ) {
+        onLoginSuccess({
+          email: 'paymentdomaingetway@gmail.com',
+          role: 'subuser',
+          gatewayTag: 'p9k2m7',
+        });
+        return;
+      }
+
+      setError('Invalid email or password. Please try again.');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An error occurred during login.');
+    } finally {
+      setLoading(false);
     }
-
-    // Sub-user check
-    if (
-      cleanEmail === 'paymentdomaingetway@gmail.com' &&
-      password === '01959684488@@'
-    ) {
-      setError('');
-      onLoginSuccess({
-        email: 'paymentdomaingetway@gmail.com',
-        role: 'subuser',
-        gatewayTag: 'p9k2m7',
-      });
-      return;
-    }
-
-    setError('Invalid email or password. Please try again.');
   };
 
   return (
@@ -48,7 +72,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         {/* Glow accent */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
-
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-600/30 mb-3">
             <Shield className="w-7 h-7" />
@@ -81,7 +104,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
               />
             </div>
           </div>
-
           <div>
             <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">
               Password
@@ -98,12 +120,12 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
               />
             </div>
           </div>
-
           <button
             type="submit"
-            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl shadow-lg transition-transform active:scale-95 text-sm mt-2"
+            disabled={loading}
+            className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl shadow-lg transition-transform active:scale-95 text-sm mt-2 flex items-center justify-center gap-2"
           >
-            Sign In
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sign In'}
           </button>
         </form>
       </div>
